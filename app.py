@@ -68,12 +68,19 @@ def handle_webhook():
             return jsonify({"challenge": args.get("challenge")})
         return jsonify({"code": 0, "msg": "ok"})
     
-    # POST请求 - 处理消息事件
+    # POST请求 - 先检查是否是验证请求
+    event_data = request.json
+    print(f"收到飞书请求: {json.dumps(event_data, ensure_ascii=False)}")
+    
+    # 处理验证请求（飞书首次配置时用POST）
+    if "challenge" in event_data:
+        return jsonify({"challenge": event_data["challenge"]})
+    
+    # 处理消息事件
     token = get_tenant_access_token()
     if not token:
         return jsonify({"code": 1, "msg": "获取token失败"})
 
-    event_data = request.json
     event_type = event_data.get("event", {}).get("type")
     if event_type == "message":
         message = event_data.get("event", {})
