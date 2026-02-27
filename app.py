@@ -28,7 +28,7 @@ def get_tenant_access_token():
         return result.get("tenant_access_token")
     else:
         print(f"获取token失败: {result}")
-        return None
+        return None   
 
 def reply_message(message_id, message_type, content, token):
     url = f"https://open.feishu.cn/open-apis/im/v1/messages/{message_id}/reply"
