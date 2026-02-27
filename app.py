@@ -1,29 +1,75 @@
-# 获取token
+"""
+飞书AI机器人 - Matrix Agent
+"""
+
+import json
+import requests
+from flask import Flask, request, jsonify
+
+app = Flask(__name__)
+
+# 配置
+APP_ID = "cli_a92ad4feddf8dcb5"
+APP_SECRET = "F8n3V1f2I2IJiXrKcuxQpdqvRNQDHtOF"
+MINIMAX_API_KEY = "sk-api-Wz0wLNNwNH2z1uwnOJ7TN2-R-E8z6gmnvldyNGX7LUk6JAfWkYW_TypGTyTbWmkr8tfoDTEHWTNi_fQGBAf7ZbCw644m9EKQPb5VCc5Zaz8Zrx-GPjUADQo"
+MINIMAX_MODEL = "abab6.5s-chat"
+
+def get_tenant_access_token():
+    url = "https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal"
+    response = requests.post(url, json={"app_id": APP_ID, "app_secret": APP_SECRET})
+    result = response.json()
+    return result.get("tenant_access_token") if result.get("code") == 0 else None
+
+def reply_message(message_id, content, token):
+    url = f"https://open.feishu.cn/open-apis/im/v1/messages/{message_id}/reply"
+    headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+    requests.post(url, headers=headers, json={"msg_type": "text", "content": json.dumps({"text": content})})
+
+def chat_with_minimax(text):
+    try:
+        response = requests.post(
+            "https://api.minimax.chat/v1/text/chatcompletion_v2",
+            headers={"Authorization": f"Bearer {MINIMAX_API_KEY}", "Content-Type": "application/json"},
+            json={"model": MINIMAX_MODEL, "messages": [{"role": "user", "content": text}], "tokens_to_generate": 500},
+            timeout=30
+        )
+        result = response.json()
+        if "choices" in result:
+            return result["choices"][0]["message"]["content"]
+        return "AI暂时无法回复"
+    except Exception as e:
+        return f"错误: {str(e)}"
+
+@app.route("/webhook", methods=["GET", "POST"])
+def webhook():
+    if request.method == "GET":
+        if "challenge" in request.args:
+            return jsonify({"challenge": request.args.get("challenge")})
+        return jsonify({"code": 0})
+    
+    data = request.json
+    if "challenge" in data:
+        return jsonify({"challenge": data["challenge"]})
+    
     token = get_tenant_access_token()
     if not token:
-        return jsonify({"code": 1, "msg": "获取token失败"})
-
-    # 处理消息事件
-    event_type = event_data.get("event", {}).get("type")
-    if event_type == "message":
-        message = event_data.get("event", {})
-        message_id = message.get("message_id")
-        sender_id = message.get("sender", {}).get("user_id", {}).get("open_id")
-        message_type = message.get("message_type")
+        return jsonify({"code": 1, "msg": "token获取失败"})
+    
+    event = data.get("event", {})
+    if event.get("type") == "message":
+        msg_id = event.get("message_id")
+        content = json.loads(event.get("content", "{}"))
+        text = content.get("text", "").strip()
         
-        # 获取消息内容
-        if message_type == "text":
-            content = json.loads(message.get("content", "{}"))
-            user_text = content.get("text", "")
-            
-            # 调用MiniMax AI获取回复
-            ai_reply = chat_with_minimax(user_text)
-            
-            # 回复用户
-            reply_message(message_id, "text", {"text": ai_reply}, token)
-            
-            return jsonify({"code": 0, "msg": "success"})
-        else:
-            # 非文本消息，发送提示
-            reply_message(message_id, "text", {"text": "抱歉，我目前只能处理文字消息"}, token)
-            return jsonify({"code": 0, "msg": "success"})
+        if text:
+            reply = chat_with_minimax(text)
+            reply_message(msg_id, reply, token)
+    
+    return jsonify({"code": 0})
+
+@app.route("/health")
+def health():
+    return jsonify({"status": "ok"})
+
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=8080)
